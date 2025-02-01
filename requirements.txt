@@ -1,0 +1,8 @@
+streamlit
+rembg
+onnxruntime
+numpy
+opencv-python
+Pillow
+streamlit-drawable-canvas
+pdf2image
