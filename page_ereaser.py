@@ -91,13 +91,19 @@ if uploaded_file:
 
                             inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
 
-                            # Merge signature
+                            # Merge signature if inpainting was successful
                             inpainted_pil = Image.fromarray(inpainted_image)
                             inpainted_pil.paste(esign, (left, top), esign)
 
                             final_result.append(inpainted_pil)
 
-                        st.subheader("Final Image Preview")
-                        st.image(final_result[0], caption="Edited Page", use_column_width=True)
+                        # Check if final_result has images before showing them
+                        if final_result:
+                            st.subheader("Final Image Preview")
+                            st.image(final_result[0], caption="Edited Page", use_column_width=True)
 
-                        images_to_pdf(final_result, "output.pdf")
+                            images_to_pdf(final_result, "output.pdf")
+                        else:
+                            st.error("No images to save in the final result.")
+                    else:
+                        st.error("No e-signature found. Please upload a signature image.")
