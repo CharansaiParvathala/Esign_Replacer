@@ -1,9 +1,8 @@
-streamlit==1.19.0
-streamlit-drawable-canvas==0.8.0
+streamlit==1.12.0
+rembg==2.0.62
 opencv-python-headless
-rembg
 pillow
 pdf2image
 onnxruntime
+streamlit-drawable-canvas
 PyMuPDF
-altair==4.2.0
