@@ -7,6 +7,8 @@ import fitz  # PyMuPDF
 import io
 from esign_extractor import get_esign  # Import your function
 
+st.set_page_config(layout="wide")
+
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -17,8 +19,6 @@ hide_st_style = """
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
-
-st.set_page_config(layout="wide")
 st.title("PDF Signatures Exchanger:")
 
 jpg_images = []  # Store extracted images from PDF
