@@ -6,3 +6,4 @@ pdf2image
 onnxruntime
 streamlit-drawable-canvas
 PyMuPDF
+altair==4.2.0
