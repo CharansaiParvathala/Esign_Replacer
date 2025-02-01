@@ -3,5 +3,6 @@ rembg
 pillow
 pdf2image
 onnxruntime
-streamlit-drawable-canvas
+streamlit==1.15.0
+streamlit-drawable-canvas==0.7.0
 PyMuPDF
