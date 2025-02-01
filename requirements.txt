@@ -2,7 +2,7 @@ streamlit
 rembg
 onnxruntime
 numpy
-opencv-python
+opencv-python-headless
 Pillow
 streamlit-drawable-canvas
 pdf2image
