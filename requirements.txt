@@ -1,8 +1,6 @@
-streamlit
-rembg
-onnxruntime
-numpy
 opencv-python-headless
-Pillow
-streamlit-drawable-canvas
+rembg
+pillow
 pdf2image
+onnxruntime
+streamlit-drawable-canvas
