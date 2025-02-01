@@ -7,15 +7,25 @@ import fitz  # PyMuPDF
 import io
 from esign_extractor import get_esign  # Import your function
 
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            MainMenu {visibility: hidden}
+            .reportview-container .main footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
 st.set_page_config(layout="wide")
-st.title("PDF Page Editor & Signature Extractor")
+st.title("PDF Signatures Exchanger:")
 
 jpg_images = []  # Store extracted images from PDF
 final_result = []  # Store edited images
 
 
 def pdf_to_images(pdf_bytes):
-    """ Convert a PDF file into a list of images (without Poppler). """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
 
@@ -90,5 +100,4 @@ if uploaded_file:
                         st.subheader("Final Image Preview")
                         st.image(final_result[0], caption="Edited Page", use_column_width=True)
 
-                        if st.button("Save as PDF"):
-                            images_to_pdf(final_result, "output.pdf")
+                        images_to_pdf(final_result, "output.pdf")
