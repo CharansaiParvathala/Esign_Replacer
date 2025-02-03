@@ -1,8 +1,8 @@
 streamlit
 opencv-python-headless
-pillow
+pillow>=10.0.0
 pdf2image
 onnxruntime
-streamlit-drawable-canvas
+streamlit-drawable-canvas>=0.4.0
 PyMuPDF
-altair==4.2.0
+altair>=4.2.0
