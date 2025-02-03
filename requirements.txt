@@ -1,7 +1,7 @@
 streamlit
 backgroundremover
 opencv-python-headless
-pillow
+pillow==9.0.1
 pdf2image
 onnxruntime
 streamlit-drawable-canvas
