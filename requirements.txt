@@ -1,5 +1,4 @@
 streamlit
-backgroundremover
 opencv-python-headless
 pillow==9.0.1
 pdf2image
