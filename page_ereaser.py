@@ -1,12 +1,26 @@
 import streamlit as st
+import streamlit.elements.image as st_image
+import base64
+import io
 import numpy as np
 import cv2
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 import fitz  # PyMuPDF
-import io
-from esign_extractor import get_esign  # Make sure this is the function that extracts the e-signature
+from esign_extractor import get_esign  # Ensure this returns the e-signature as a PIL image
 
+# Monkey-patch: Define image_to_url accepting additional parameters
+def image_to_url(*args, **kwargs):
+    # Expecting the first argument to be the PIL image
+    image = args[0]
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    return "data:image/png;base64," + img_str
+
+st_image.image_to_url = image_to_url
+
+st.set_page_config(layout="wide")
 # Hide Streamlit's default menu and footer
 hide_st_style = """
             <style>
@@ -19,7 +33,6 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-st.set_page_config(layout="wide")
 st.title("PDF Signatures Exchanger:")
 
 jpg_images = []  # Store extracted images from PDF
@@ -55,7 +68,7 @@ def get_canvas_result(image_pil):
         fill_color="rgba(255, 255, 255, 0.5)",  # Transparent overlay
         stroke_width=2,
         stroke_color="red",
-        background_image=img_np,  # Use numpy array as background
+        background_image=Image.fromarray(img_np),  # Convert NumPy array back to PIL image
         update_streamlit=True,
         height=img_np.shape[0],  # Image height
         width=img_np.shape[1],  # Image width
@@ -72,7 +85,6 @@ if uploaded_file:
         jpg_images = [np.array(img.convert("RGB")) for img in images]  # Convert images to numpy arrays
         image_pil = images[0]  # Use the first page as reference image
 
-        height, width = jpg_images[0].shape[:2]
         st.subheader("Draw a Rectangle to Erase")
 
         # Get the canvas result for drawing a rectangle
@@ -86,12 +98,12 @@ if uploaded_file:
                     w, h = int(obj["width"]), int(obj["height"])
 
                     # Extract e-signature
-                    esign = get_esign()  # Ensure this returns a valid signature
+                    esign = get_esign()  # Ensure this returns a valid PIL image of the signature
 
                     if esign:
                         esign = esign.resize((w, h))  # Resize the e-signature to match the erased area
 
-                        # Process each image on the PDF
+                        # Process each image in the PDF
                         for idx, jpg in enumerate(jpg_images):
                             mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
                             mask[top:top + h, left:left + w] = 255
