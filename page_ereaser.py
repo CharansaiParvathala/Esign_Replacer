@@ -1,130 +1,101 @@
 import streamlit as st
-import streamlit.elements.image as st_image
-import base64
-import io
 import numpy as np
 import cv2
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+import io
+import base64
 import fitz  # PyMuPDF
-from esign_extractor import get_esign  # Ensure this returns the e-signature as a PIL image
-
-# Monkey-patch: Define image_to_url accepting additional parameters
-def image_to_url(*args, **kwargs):
-    # Expecting the first argument to be the PIL image
-    image = args[0]
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-    return "data:image/png;base64," + img_str
-
-st_image.image_to_url = image_to_url
-
-st.set_page_config(layout="wide")
-# Hide Streamlit's default menu and footer
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            MainMenu {visibility: hidden}
-            .reportview-container .main footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
-
-st.title("PDF Signatures Exchanger:")
-
-jpg_images = []  # Store extracted images from PDF
-final_result = []  # Store edited images
+from esign_extractor import get_esign  # This should return the e-signature as a PIL image
 
 # Function to convert PDF pages into images
 def pdf_to_images(pdf_bytes):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
     for page in doc:
-        pix = page.get_pixmap()  # Render page as image
-        img = Image.open(io.BytesIO(pix.tobytes("jpeg")))  # Convert bytes to image
+        pix = page.get_pixmap()
+        img = Image.open(io.BytesIO(pix.tobytes("jpeg")))
         images.append(img)
     return images
 
-# Function to convert list of images to a single PDF
+# Function to convert list of images to a single PDF and allow download
 def images_to_pdf(image_list, output_pdf_path):
     if not image_list:
         st.error("No processed images available to save as PDF.")
         return
     image_list[0].save(output_pdf_path, save_all=True, append_images=image_list[1:])
     st.success("PDF saved successfully!")
-
-    # Allow user to download the processed PDF
     with open(output_pdf_path, "rb") as f:
         st.download_button("Download Processed PDF", f, "processed_document.pdf", "application/pdf")
 
-# Function to handle canvas drawing and process image
-def get_canvas_result(image_pil):
-    img_np = np.array(image_pil)  # Convert PIL image to numpy array
-
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 255, 255, 0.5)",  # Transparent overlay
-        stroke_width=2,
-        stroke_color="red",
-        background_image=Image.fromarray(img_np),  # Convert NumPy array back to PIL image
-        update_streamlit=True,
-        height=img_np.shape[0],  # Image height
-        width=img_np.shape[1],  # Image width
-        drawing_mode="rect",  # Drawing mode as rectangle
-        key="canvas",
-    )
-    return canvas_result
+st.set_page_config(layout="wide")
+st.title("PDF Signatures Exchanger:")
 
 # Upload PDF file
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 if uploaded_file:
-    images = pdf_to_images(uploaded_file.read())  # Convert PDF to images
+    images = pdf_to_images(uploaded_file.read())
     if images:
-        jpg_images = [np.array(img.convert("RGB")) for img in images]  # Convert images to numpy arrays
-        image_pil = images[0]  # Use the first page as reference image
+        # We'll work with the first page as a reference image
+        image_pil = images[0]
+        # Convert all pages to numpy arrays (RGB)
+        jpg_images = [np.array(img.convert("RGB")) for img in images]
 
-        st.subheader("Draw a Rectangle to Erase")
+        st.subheader("Tap two points on the image to define the rectangle area (top-left and bottom-right)")
 
-        # Get the canvas result for drawing a rectangle
-        canvas_result = get_canvas_result(image_pil)
+        # Use the community component to get click coordinates.
+        # (Install via: pip install streamlit-image-coordinates)
+        import streamlit_image_coordinates as sic
 
-        # Process the canvas drawing data
-        if canvas_result.json_data is not None:
-            for obj in canvas_result.json_data["objects"]:
-                if obj["type"] == "rect":
-                    left, top = int(obj["left"]), int(obj["top"])
-                    w, h = int(obj["width"]), int(obj["height"])
+        # The component displays the image and returns the (x, y) coordinate of the tap.
+        click_result = sic.clickable_image(image_pil, key="clickable_image")
 
-                    # Extract e-signature
-                    esign = get_esign()  # Ensure this returns a valid PIL image of the signature
+        if click_result is not None:
+            # We need two clicks to define a rectangle.
+            if "first_click" not in st.session_state:
+                st.session_state.first_click = click_result
+                st.info("First point recorded. Please tap on the opposite corner of the rectangle.")
+            else:
+                second_click = click_result
+                first_click = st.session_state.first_click
 
-                    if esign:
-                        esign = esign.resize((w, h))  # Resize the e-signature to match the erased area
+                # Compute rectangle from the two clicks
+                left = min(first_click["x"], second_click["x"])
+                top = min(first_click["y"], second_click["y"])
+                width = abs(second_click["x"] - first_click["x"])
+                height = abs(second_click["y"] - first_click["y"])
 
-                        # Process each image in the PDF
+                st.write(f"Defined rectangle: left={left}, top={top}, width={width}, height={height}")
+
+                if st.button("Apply Signature Replacement"):
+                    # Extract e-signature (should return a PIL image)
+                    esign = get_esign()
+                    if not esign:
+                        st.error("No e-signature found. Please upload a signature image.")
+                    else:
+                        # Resize the signature to match the selected rectangle
+                        esign = esign.resize((width, height))
+                        final_result = []
+
                         for idx, jpg in enumerate(jpg_images):
                             mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
-                            mask[top:top + h, left:left + w] = 255
+                            mask[top:top + height, left:left + width] = 255
 
-                            # Inpainting to replace erased area with the signature
+                            # Inpaint the area to remove the original signature or mark
                             inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
 
-                            # Merge signature if inpainting was successful
+                            # Convert back to PIL image and paste the new e-signature over the inpainted area
                             inpainted_pil = Image.fromarray(inpainted_image)
-                            inpainted_pil.paste(esign, (left, top), esign)  # Paste signature
+                            inpainted_pil.paste(esign, (left, top), esign)
+                            final_result.append(inpainted_pil)
 
-                            final_result.append(inpainted_pil)  # Append to final result
-
-                        # Check if final_result has images before showing them
                         if final_result:
                             st.subheader("Final Image Preview")
                             st.image(final_result[0], caption="Edited Page", use_column_width=True)
-
-                            # Save and allow user to download the edited PDF
                             images_to_pdf(final_result, "output.pdf")
                         else:
-                            st.error("No images to save in the final result.")
-                    else:
-                        st.error("No e-signature found. Please upload a signature image.")
+                            st.error("No images were processed.")
+
+                # Optionally, once the rectangle is defined, clear the first click for a new selection:
+                if st.button("Reset Selection"):
+                    del st.session_state["first_click"]
+                    
