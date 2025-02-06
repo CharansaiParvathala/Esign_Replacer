@@ -1,101 +1,89 @@
 import streamlit as st
-import numpy as np
 import cv2
+import numpy as np
 from PIL import Image
-import io
-import base64
-import fitz  # PyMuPDF
-from esign_extractor import get_esign  # This should return the e-signature as a PIL image
 
-# Function to convert PDF pages into images
-def pdf_to_images(pdf_bytes):
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    images = []
-    for page in doc:
-        pix = page.get_pixmap()
-        img = Image.open(io.BytesIO(pix.tobytes("jpeg")))
-        images.append(img)
-    return images
+# Function to handle mouse events for selecting ROI
+def select_roi(image):
+    st.write("### Select a Region of Interest (ROI)")
+    st.write("1. Click and drag to draw a rectangle.")
+    st.write("2. Double-click inside the rectangle to confirm your selection.")
 
-# Function to convert list of images to a single PDF and allow download
-def images_to_pdf(image_list, output_pdf_path):
-    if not image_list:
-        st.error("No processed images available to save as PDF.")
-        return
-    image_list[0].save(output_pdf_path, save_all=True, append_images=image_list[1:])
-    st.success("PDF saved successfully!")
-    with open(output_pdf_path, "rb") as f:
-        st.download_button("Download Processed PDF", f, "processed_document.pdf", "application/pdf")
+    # Convert image to OpenCV format
+    image_cv = np.array(image)
+    image_cv = cv2.cvtColor(image_cv, cv2.COLOR_RGB2BGR)
 
-st.set_page_config(layout="wide")
-st.title("PDF Signatures Exchanger:")
+    # Initialize global variables for ROI selection
+    ref_point = []
+    cropping = False
 
-# Upload PDF file
-uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
-if uploaded_file:
-    images = pdf_to_images(uploaded_file.read())
-    if images:
-        # We'll work with the first page as a reference image
-        image_pil = images[0]
-        # Convert all pages to numpy arrays (RGB)
-        jpg_images = [np.array(img.convert("RGB")) for img in images]
+    def click_and_crop(event, x, y, flags, param):
+        nonlocal ref_point, cropping
 
-        st.subheader("Tap two points on the image to define the rectangle area (top-left and bottom-right)")
+        if event == cv2.EVENT_LBUTTONDOWN:
+            ref_point = [(x, y)]
+            cropping = True
 
-        # Use the community component to get click coordinates.
-        # (Install via: pip install streamlit-image-coordinates)
-        import streamlit_image_coordinates as sic
+        elif event == cv2.EVENT_LBUTTONUP:
+            ref_point.append((x, y))
+            cropping = False
 
-        # The component displays the image and returns the (x, y) coordinate of the tap.
-        click_result = sic.clickable_image(image_pil, key="clickable_image")
+            # Draw the rectangle on the image
+            cv2.rectangle(image_cv, ref_point[0], ref_point[1], (0, 255, 0), 2)
+            cv2.imshow("Image", image_cv)
 
-        if click_result is not None:
-            # We need two clicks to define a rectangle.
-            if "first_click" not in st.session_state:
-                st.session_state.first_click = click_result
-                st.info("First point recorded. Please tap on the opposite corner of the rectangle.")
-            else:
-                second_click = click_result
-                first_click = st.session_state.first_click
+        elif event == cv2.EVENT_LBUTTONDBLCLK:
+            cv2.destroyAllWindows()
 
-                # Compute rectangle from the two clicks
-                left = min(first_click["x"], second_click["x"])
-                top = min(first_click["y"], second_click["y"])
-                width = abs(second_click["x"] - first_click["x"])
-                height = abs(second_click["y"] - first_click["y"])
+    # Create a named window and set the mouse callback
+    cv2.namedWindow("Image")
+    cv2.setMouseCallback("Image", click_and_crop)
 
-                st.write(f"Defined rectangle: left={left}, top={top}, width={width}, height={height}")
+    # Display the image and wait for ROI selection
+    while True:
+        cv2.imshow("Image", image_cv)
+        key = cv2.waitKey(1) & 0xFF
 
-                if st.button("Apply Signature Replacement"):
-                    # Extract e-signature (should return a PIL image)
-                    esign = get_esign()
-                    if not esign:
-                        st.error("No e-signature found. Please upload a signature image.")
-                    else:
-                        # Resize the signature to match the selected rectangle
-                        esign = esign.resize((width, height))
-                        final_result = []
+        # Break the loop if 'q' is pressed or ROI is selected
+        if key == ord("q") or len(ref_point) == 2:
+            break
 
-                        for idx, jpg in enumerate(jpg_images):
-                            mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
-                            mask[top:top + height, left:left + width] = 255
+    cv2.destroyAllWindows()
 
-                            # Inpaint the area to remove the original signature or mark
-                            inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+    # Return the coordinates of the selected ROI
+    if len(ref_point) == 2:
+        x1, y1 = ref_point[0]
+        x2, y2 = ref_point[1]
+        left = min(x1, x2)
+        top = min(y1, y2)
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+        return left, top, width, height
+    else:
+        return None
 
-                            # Convert back to PIL image and paste the new e-signature over the inpainted area
-                            inpainted_pil = Image.fromarray(inpainted_image)
-                            inpainted_pil.paste(esign, (left, top), esign)
-                            final_result.append(inpainted_pil)
+# Streamlit app
+def main():
+    st.title("Interactive ROI Selection")
+    st.write("Upload an image and select a region of interest (ROI) to get its coordinates.")
 
-                        if final_result:
-                            st.subheader("Final Image Preview")
-                            st.image(final_result[0], caption="Edited Page", use_column_width=True)
-                            images_to_pdf(final_result, "output.pdf")
-                        else:
-                            st.error("No images were processed.")
+    # Upload image
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
 
-                # Optionally, once the rectangle is defined, clear the first click for a new selection:
-                if st.button("Reset Selection"):
-                    del st.session_state["first_click"]
-                    
+        # Select ROI
+        roi_coords = select_roi(image)
+
+        if roi_coords:
+            left, top, width, height = roi_coords
+            st.write("### Selected ROI Coordinates:")
+            st.write(f"Left: {left}, Top: {top}, Width: {width}, Height: {height}")
+
+            # Display the cropped region
+            cropped_image = image.crop((left, top, left + width, top + height))
+            st.image(cropped_image, caption="Cropped Region", use_column_width=True)
+
+if __name__ == "__main__":
+    main()
