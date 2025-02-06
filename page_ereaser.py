@@ -1,47 +1,43 @@
 import streamlit as st
-from PIL import Image
-import numpy as np
+from streamlit_image_coordinates import streamlit_image_coordinates
+from PIL import Image, ImageDraw
 
-# Function to handle ROI selection using Streamlit
-def select_roi(image):
-    st.write("### Select a Region of Interest (ROI)")
-    st.write("1. Click and drag to draw a rectangle.")
-    st.write("2. Double-click inside the rectangle to confirm your selection.")
+# Load image
+img = Image.open("initial_image.jpg")
 
-    # Convert image to numpy array
-    image_np = np.array(image)
+# Initialize session state for storing rectangles
+if "rectangles" not in st.session_state:
+    st.session_state["rectangles"] = []
+if "temp_point" not in st.session_state:
+    st.session_state["temp_point"] = None
 
-    # Use Streamlit's image component with a custom key
-    st.image(image, caption="Draw a rectangle on the image", use_column_width=True)
 
-    # Use Streamlit's file uploader to simulate ROI selection
-    roi_coords = st.text_input("Enter ROI coordinates (left, top, width, height):", "0, 0, 100, 100")
-    left, top, width, height = map(int, roi_coords.split(","))
+# Function to draw rectangles
+def draw_rectangles(image, rectangles):
+    draw = ImageDraw.Draw(image)
+    for rect in rectangles:
+        draw.rectangle(rect, outline="red", width=2)
+    return image
 
-    return left, top, width, height
 
-# Streamlit app
-def main():
-    st.title("Interactive ROI Selection")
-    st.write("Upload an image and select a region of interest (ROI) to get its coordinates.")
+# Display image with drawn rectangles
+img = draw_rectangles(img.copy(), st.session_state["rectangles"])
 
-    # Upload image
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
 
-        # Select ROI
-        roi_coords = select_roi(image)
+# Capture new clicks on the image
+value = streamlit_image_coordinates(img, key="pil")
 
-        if roi_coords:
-            left, top, width, height = roi_coords
-            st.write("### Selected ROI Coordinates:")
-            st.write(f"Left: {left}, Top: {top}, Width: {width}, Height: {height}")
+if value is not None:
+    point = (value["x"], value["y"])
 
-            # Display the cropped region
-            cropped_image = image.crop((left, top, left + width, top + height))
-            st.image(cropped_image, caption="Cropped Region", use_column_width=True)
-
-if __name__ == "__main__":
-    main()
+    if st.session_state["temp_point"] is None:
+        # Store first point
+        st.session_state["temp_point"] = point
+    else:
+        # Second point defines opposite corner of rectangle
+        x1, y1 = st.session_state["temp_point"]
+        x2, y2 = point
+        rect = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
+        st.session_state["rectangles"].append(rect)
+        st.session_state["temp_point"] = None
+        st.rerun()
