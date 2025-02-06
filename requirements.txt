@@ -7,3 +7,4 @@ onnxruntime
 streamlit-drawable-canvas
 altair
 PyMuPDF
+streamlit_image_coordinates
