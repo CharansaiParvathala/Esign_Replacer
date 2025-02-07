@@ -3,7 +3,8 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 from PIL import Image, ImageDraw
 
 # Load image
-img = Image.open("Screenshot_2025-02-05-19-05-00-482_com.android.chrome.png")
+img = st.file_uploader("Img",type=["jpg","png","jpeg"])
+img = Image.open(img)
 
 # Initialize session state for storing rectangles
 if "rectangles" not in st.session_state:
