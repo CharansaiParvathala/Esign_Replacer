@@ -6,7 +6,10 @@ from PIL import Image, ImageDraw
 img = st.file_uploader("Img", type=["jpg", "png", "jpeg"])
 
 if img is not None:
-    img = Image.open(img)
+    img = Image.open(img)  # Open the uploaded image
+
+    # Get image width and height
+    img_width, img_height = img.size
 
     # Initialize session state for storing rectangles
     if "rectangles" not in st.session_state:
@@ -22,10 +25,15 @@ if img is not None:
         return image
 
     # Display image with drawn rectangles
-    img = draw_rectangles(img.copy(), st.session_state["rectangles"])
+    img_with_rectangles = draw_rectangles(img.copy(), st.session_state["rectangles"])
 
     # Capture new clicks on the image
-    value = streamlit_image_coordinates(img, key="pil")
+    value = streamlit_image_coordinates(
+        img_with_rectangles,
+        key="pil",
+        width=img_width,  # Pass image width
+        height=img_height,  # Pass image height
+    )
 
     if value is not None:
         point = (value["x"], value["y"])
