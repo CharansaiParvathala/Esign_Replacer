@@ -1,151 +1,140 @@
 import streamlit as st
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw
 from streamlit_image_coordinates import streamlit_image_coordinates
 import fitz
 import io
-import cv2
+from esign_extractor import get_esign
 
-# Page configuration
 st.set_page_config(layout="wide")
-st.title("PDF Signatures Exchanger")
 
-# Hide default Streamlit elements
 hide_st_style = """
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-"""
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            MainMenu {visibility: hidden}
+            .reportview-container .main footer {visibility: hidden;}
+            </style>
+            """
 st.markdown(hide_st_style, unsafe_allow_html=True)
+st.title("PDF Signatures Exchanger:")
 
-# --- Utility Functions ---
+jpg_images = []  # Store extracted images from PDF
+final_result = []  # Store edited images
+
+
 def pdf_to_images(pdf_bytes):
-    """Convert PDF to a list of PIL images."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    return [page.get_pixmap().tobytes("jpeg") for page in doc]
+    images = []
 
-def draw_rectangles(image, rectangles):
-    """Draw rectangles on an image."""
-    img = Image.open(io.BytesIO(image))
-    draw = ImageDraw.Draw(img)
-    for rect in rectangles:
-        draw.rectangle(rect, outline="red", width=2)
-    return img
+    for page in doc:
+        pix = page.get_pixmap()
+        img = Image.open(io.BytesIO(pix.tobytes("jpeg")))
+        images.append(img)
 
-# --- Session State Initialization ---
-if "current_page" not in st.session_state:
-    st.session_state.update({
-        "current_page": 0,
-        "rectangles": {},
-        "temp_point": None,
-        "prev_point": None,
-        "original_images": None,
-        "processed_images": None,
-        "last_rectangle": None  # Stores the last selected rectangle
-    })
+    return images
 
-# --- File Upload & Mode Selection ---
+
+def images_to_pdf(image_list, output_pdf_path):
+    """ Convert list of PIL images into a single PDF file. """
+    if not image_list:
+        st.error("No processed images available to save as PDF.")
+        return
+
+    image_list[0].save(output_pdf_path, save_all=True, append_images=image_list[1:])
+
+    st.success("PDF saved successfully!")
+
+    with open(output_pdf_path, "rb") as f:
+        st.download_button("Download Processed PDF", f, "processed_document.pdf", "application/pdf")
+
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
-mode = st.radio("Select mode", ["Each Page", "All Pages"])
 
 if uploaded_file:
-    # Initialize PDF images once
-    if st.session_state.original_images is None:
-        st.session_state.original_images = pdf_to_images(uploaded_file.read())
+    images = pdf_to_images(uploaded_file.read())
+    if images:
+        jpg_images = [np.array(img.convert("RGB")) for img in images]
+        image_pil = images[0]
 
-    total_pages = len(st.session_state.original_images)
-    current_page = st.session_state.current_page
+        img_width, img_height = image_pil.size
 
-    # --- Annotation Interface ---
-    st.subheader(f"Page {current_page + 1} of {total_pages}")
+        if "rectangles" not in st.session_state:
+            st.session_state["rectangles"] = []
+        if "temp_point" not in st.session_state:
+            st.session_state["temp_point"] = None
 
-    # Display the current image with annotations
-    current_image = st.session_state.original_images[current_page]
-    annotated_image = draw_rectangles(current_image, st.session_state.rectangles.get(current_page, []))
+        def draw_rectangles(image, rectangles):
+            draw = ImageDraw.Draw(image)
+            for rect in rectangles:
+                draw.rectangle(rect, outline="red", width=2)
+            return image
 
-    # Get click coordinates
-    value = streamlit_image_coordinates(
-        annotated_image,
-        key=f"coord_{current_page}",
-        width=Image.open(io.BytesIO(current_image)).size[0],
-        height=Image.open(io.BytesIO(current_image)).size[1]
-    )
+        img_with_rectangles = draw_rectangles(image_pil.copy(), st.session_state["rectangles"])
 
-    # Handle clicks
-    if value is not None:
-        new_point = (value["x"], value["y"])
-        if st.session_state.prev_point != new_point:
-            st.session_state.prev_point = new_point
+        value = streamlit_image_coordinates(
+            img_with_rectangles,
+            key="pil",
+            width=img_width,
+            height=img_height,
+        )
 
-            if st.session_state.temp_point is None:
-                # First click - store the point
-                st.session_state.temp_point = new_point
+        if value is not None:
+            point = (value["x"], value["y"])
+
+            if st.session_state["temp_point"] is None:
+                # Store first point
+                st.session_state["temp_point"] = point
             else:
-                # Second click - create a rectangle
-                x1, y1 = st.session_state.temp_point
-                x2, y2 = new_point
-                rect = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
+                # Second point defines opposite corner of rectangle
+                x1, y1 = st.session_state["temp_point"]
+                x2, y2 = point
 
-                # Store the rectangle
-                if current_page not in st.session_state.rectangles:
-                    st.session_state.rectangles[current_page] = []
-                st.session_state.rectangles[current_page].append(rect)
+                # Ensure the rectangle has positive width and height
+                if x1 != x2 and y1 != y2:
+                    rect = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
+                    st.session_state["rectangles"].append(rect)
+                    st.session_state["temp_point"] = None
+                    st.rerun()
+                else:
+                    st.warning("Please select two different points for the rectangle.")
 
-                # Update the last selected rectangle
-                st.session_state.last_rectangle = rect
+        # Inpainting and signature replacement logic
+        if st.session_state["rectangles"]:
+            # Extract e-signature
+            esign = get_esign()
 
-                # Reset temporary points
-                st.session_state.temp_point = None
-                st.session_state.prev_point = None
+            if esign is not None:
+                # Loop over rectangles and replace them with e-signature
+                for idx, jpg in enumerate(jpg_images):
+                    for rect in st.session_state["rectangles"]:
+                        left, top = rect[0]
+                        right, bottom = rect[1]
+                        width, height = right - left, bottom - top
 
-                # Automatically advance to the next page
-                if current_page < total_pages - 1:
-                    st.session_state.current_page += 1
+                        # Ensure width and height are positive
+                        if width > 0 and height > 0:
+                            esign_resized = esign.resize((width, height))
 
-    # --- Apply to All Pages ---
-    if mode == "All Pages" and st.session_state.last_rectangle is not None:
-        if st.button("Apply to All Pages"):
-            for pg in range(current_page, total_pages):
-                if pg not in st.session_state.rectangles:
-                    st.session_state.rectangles[pg] = []
-                st.session_state.rectangles[pg].append(st.session_state.last_rectangle)
-            st.success(f"Last rectangle applied to pages {current_page + 1} to {total_pages}!")
+                            # Create mask for inpainting
+                            mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
+                            mask[top:bottom, left:right] = 255
 
-    # --- Signature Processing ---
-    esign_file = st.sidebar.file_uploader("Upload e-signature", type=["png", "jpg"])
-    if esign_file:
-        esign = Image.open(esign_file).convert("RGBA")
-        processed_images = []
+                            inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
 
-        for idx in range(total_pages):
-            if idx in st.session_state.rectangles:
-                img_array = np.array(Image.open(io.BytesIO(st.session_state.original_images[idx])))
-                for rect in st.session_state.rectangles[idx]:
-                    left, top = rect[0]
-                    right, bottom = rect[1]
-                    w, h = right - left, bottom - top
+                            # Paste signature on the inpainted image
+                            inpainted_pil = Image.fromarray(inpainted_image)
+                            inpainted_pil.paste(esign_resized, (left, top), esign_resized)
+                            final_result.append(inpainted_pil)
 
-                    # Inpainting
-                    mask = np.zeros(img_array.shape[:2], dtype=np.uint8)
-                    mask[top:bottom, left:right] = 255
-                    inpainted = cv2.inpaint(img_array, mask, 3, cv2.INPAINT_TELEA)
+                # Check if final_result has images before showing them
+                if final_result:
+                    st.subheader("Final Image Preview")
+                    st.image(final_result[0], caption="Edited Page", use_column_width=True)
 
-                    # Paste signature
-                    sig_resized = esign.resize((w, h))
-                    pil_img = Image.fromarray(inpainted)
-                    pil_img.paste(sig_resized, (left, top), sig_resized)
-                    processed_images.append(pil_img)
-
-        st.session_state.processed_images = processed_images
-
-    # --- Preview & Download ---
-    if st.session_state.processed_images:
-        st.sidebar.subheader("Preview")
-        st.sidebar.image(st.session_state.processed_images[0], use_column_width=True)
-        if st.button("Download Processed PDF"):
-            output_path = "signed_document.pdf"
-            st.session_state.processed_images[0].save(output_path, save_all=True, append_images=st.session_state.processed_images[1:])
-            with open(output_path, "rb") as f:
-                st.download_button("Download PDF", f, "signed_document.pdf", "application/pdf")
+                    images_to_pdf(final_result, "output.pdf")
+                else:
+                    st.error("No images to save in the final result.")
+            else:
+                st.info("Upload e-signature.")
