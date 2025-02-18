@@ -96,7 +96,6 @@ if uploaded_file:
                     rect = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
                     st.session_state["rectangles"].append(rect)
                     st.session_state["temp_point"] = None
-                    st.rerun()
                 else:
                     st.warning("Please select two different points for the rectangle.")
 
