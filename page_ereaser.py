@@ -50,6 +50,7 @@ def images_to_pdf(image_list, output_pdf_path):
     with open(output_pdf_path, "rb") as f:
         st.download_button("Download Processed PDF", f, "processed_document.pdf", "application/pdf")
 
+
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 
 if uploaded_file:
@@ -130,7 +131,7 @@ if uploaded_file:
                 # Check if final_result has images before showing them
                 if final_result:
                     st.subheader("Final Image Preview")
-                    st.image(final_result[0], caption="Edited Page", use_column_width=True)
+                    st.image(final_result[0], caption="Edited Page", width=800)  # Adjusted width
 
                     images_to_pdf(final_result, "output.pdf")
                 else:
