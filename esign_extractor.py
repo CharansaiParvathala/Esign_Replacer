@@ -4,9 +4,8 @@ from PIL import Image
 import cv2
 import numpy as np
 
-def remove_background():
+def remove_background(image):
     """Remove background from a signature image using OpenCV."""
-    image = st.file_uploader("Upload Signature image or Logo image" , type=["jpg", "jpeg", "png"])
     # Convert PIL image to OpenCV format
     image = np.array(image.convert("RGB"))
 
@@ -19,8 +18,8 @@ def remove_background():
     # Convert back to PIL image
     return Image.fromarray(binary)
 
-def get_esign():
-    rawsign = st.file_uploader('Signature Image', type=["jpg", "jpeg", "png"])
+def get_esign(msg):
+    rawsign = st.file_uploader(msg, type=["jpg", "jpeg", "png"])
     if rawsign:
         image = Image.open(rawsign)
         esign = remove_background(image)
