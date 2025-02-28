@@ -142,7 +142,7 @@ if uploaded_file:
 
                             final_result.append(inpainted_pil)
 
-                # Check if final_result has images before showing them
+                # Check final_result has images
                 if final_result:
                     st.subheader("Final Image Preview")
                     st.image(final_result[0], caption="Edited Page", use_column_width=True)
