@@ -57,7 +57,7 @@ if mod == "Replace Sign":
 elif mod == "Add Background Logo":
     msg = "Upload Logo Image"
 
-esign = get_esign()
+esign = get_esign(msg)
 
 uploaded_file = st.file_uploader("Upload your PDF file", type=["pdf"])
 
