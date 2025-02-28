@@ -6,6 +6,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 import fitz
 import io
 from esign_extractor import get_esign
+from PIL import Image
 
 st.set_page_config(layout="wide")
 
@@ -21,8 +22,8 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 st.title("PDF Signatures Exchanger:")
 
-jpg_images = []  # Store extracted images from PDF
-final_result = []  # Store edited images
+jpg_images = []
+final_result = []
 
 def pdf_to_images(pdf_bytes):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -35,6 +36,7 @@ def pdf_to_images(pdf_bytes):
 
     return images
 
+
 def images_to_pdf(image_list, output_pdf_path):
     """ Convert list of PIL images into a single PDF file. """
     if not image_list:
@@ -42,12 +44,22 @@ def images_to_pdf(image_list, output_pdf_path):
         return
 
     image_list[0].save(output_pdf_path, save_all=True, append_images=image_list[1:])
+
     st.success("PDF saved successfully!")
 
     with open(output_pdf_path, "rb") as f:
-        st.download_button("Download Processed PDF", f, "processed_document.pdf", "application/pdf")
+        st.download_button("Download Processed PDF", f, "Output.pdf", "application/pdf")
 
-uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+mod = st.radio("Select your mode",['Replace Sign', 'Add Background Logo'])
+
+if mod == "Replace Sign":
+    msg = "Upload Signature Image"
+elif mod == "Add Background Logo":
+    msg = "Upload Logo Image"
+
+esign = get_esign(msg)
+
+uploaded_file = st.file_uploader("Upload your PDF file", type=["pdf"])
 
 if uploaded_file:
     images = pdf_to_images(uploaded_file.read())
@@ -92,16 +104,20 @@ if uploaded_file:
                 if x1 != x2 and y1 != y2:
                     rect = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
                     st.session_state["rectangles"].append(rect)
-                    st.session_state["temp_point"] = None  # Reset after rectangle is drawn
+                    st.session_state["temp_point"] = None
+                    st.rerun()
                 else:
                     st.warning("Please select two different points for the rectangle.")
 
         # Inpainting and signature replacement logic
         if st.session_state["rectangles"]:
-            esign = get_esign()
+            if mod == "Add Background Logo":
+                opacity = st.slider("Select Signature Opacity", 0, 255, 128)
+                r, g, b, alpha = esign.split()
+                alpha = alpha.point(lambda p: p * (opacity / 255))
+                esign = Image.merge("RGBA", (r, g, b, alpha))
 
             if esign is not None:
-                # Loop over rectangles and replace them with e-signature
                 for idx, jpg in enumerate(jpg_images):
                     for rect in st.session_state["rectangles"]:
                         left, top = rect[0]
@@ -112,27 +128,27 @@ if uploaded_file:
                         if width > 0 and height > 0:
                             esign_resized = esign.resize((width, height))
 
-                            # Create mask for inpainting
-                            mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
-                            mask[top:bottom, left:right] = 255
+                            if mod == "Replace Sign":
+                                # Create mask for inpainting
+                                mask = np.zeros(jpg.shape[:2], dtype=np.uint8)
+                                mask[top:bottom, left:right] = 255
 
-                            # Inpainting with Telea method
-                            inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-
+                                inpainted_image = cv2.inpaint(jpg, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+                            else:
+                                inpainted_image = jpg
                             # Paste signature on the inpainted image
                             inpainted_pil = Image.fromarray(inpainted_image)
                             inpainted_pil.paste(esign_resized, (left, top), esign_resized)
 
                             final_result.append(inpainted_pil)
 
-                # If final_result has images, convert them into a PDF
+                # Check if final_result has images before showing them
                 if final_result:
                     st.subheader("Final Image Preview")
-                    st.image(final_result[0], caption="Edited Page", width=800)  # Adjusted width
+                    st.image(final_result[0], caption="Edited Page", use_column_width=True)
 
-                    # Save the final result as a PDF
                     images_to_pdf(final_result, "output.pdf")
                 else:
                     st.error("No images to save in the final result.")
             else:
-                st.info("Please upload an e-signature.")
+                st.info("Upload e-signature.")
